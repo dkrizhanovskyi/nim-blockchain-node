@@ -1,0 +1,11 @@
+# Nim specific
+nimcache/
+*.exe
+*.dll
+*.pdb
+
+# VSCode
+.vscode/
+
+# Logs
+logs/

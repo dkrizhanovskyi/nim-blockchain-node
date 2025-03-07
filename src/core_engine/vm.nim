@@ -1,49 +1,52 @@
-# ======================================================
-# Module: Virtual Machine (VM)
-# Role: Transaction execution and gas metering
-# Author's Perspective: System Architect & Lead Cryptographer
-# ======================================================
+import state_management
 
-# ------------------------------------------------------
-# Type: VM
-# Purpose:
-#   Manages smart contract execution through gas metering.
-#
-# Fields:
-# - gasLimit: Represents the computational resources available for executing transactions.
-# - Explicit gas management prevents denial-of-service attacks by ensuring resources are allocated fairly and securely.
-# ------------------------------------------------------
-type VM* = ref object
-  gasLimit*: int  # Maximum allowed computation (gas) for transaction execution
+type
+  Transaction* = object
+    sender*: string
+    receiver*: string
+    amount*: int
+    fee*: int
+    nonce*: int
 
-# ------------------------------------------------------
-# Proc: initializeVM
-# Purpose:
-#   Initializes the VM with a predefined gas limit.
-# Security and Architecture Considerations:
-#   Explicitly setting gas limits ensures predictable resource management, crucial for securing transactions and maintaining overall system stability.
-# ------------------------------------------------------
-proc initializeVM*(gasLimit: int): VM =
-  VM(gasLimit: gasLimit)
+  VM* = object
+    state*: StateDB
+    gasLimit*: int
+    gasUsed*: int
 
-# ------------------------------------------------------
-# Proc: executeTransaction
-# Purpose:
-#   Executes a transaction if sufficient gas is available.
-# Cryptographic and Security Implications:
-#   - Explicit gas consumption checks protect against malicious transactions designed to exhaust computational resources.
-#   - Ensures resource integrity, transaction validity, and economic fairness across the blockchain network.
-# ------------------------------------------------------
-proc executeTransaction*(vm: VM, txCost: int): bool =
-  if vm.gasLimit >= txCost:
-    vm.gasLimit -= txCost
-    true
-  else:
-    false
+proc newVM*(state: StateDB, gasLimit: int): VM =
+  VM(state: state, gasLimit: gasLimit, gasUsed: 0)
 
-# ======================================================
-# Summary (Architectural & Cryptographic Insights):
-# - Gas metering explicitly implemented to secure the blockchain network against resource-exhaustion attacks.
-# - The architecture ensures transaction execution adheres strictly to resource constraints, maintaining network stability and fairness.
-# - Clear and explicit gas management aligns with best practices for blockchain security and computational resource handling.
-# ======================================================
+proc validateTx*(vm: VM, tx: Transaction): bool =
+  if tx.amount <= 0 or tx.fee < 0:
+    return false
+  if vm.state.getBalance(tx.sender) < tx.amount + tx.fee:
+    return false
+  if tx.nonce != vm.state.getNonce(tx.sender) + 1:
+    return false
+  true
+
+proc applyTx*(vm: var VM, tx: Transaction): bool =
+  const gasPerTx = 21000
+  if vm.gasUsed + gasPerTx > vm.gasLimit or not vm.validateTx(tx):
+    return false
+  if not vm.state.decreaseBalance(tx.sender, tx.amount + tx.fee):
+    return false
+  vm.state.increaseBalance(tx.receiver, tx.amount)
+  discard vm.state.incrementNonce(tx.sender)
+  vm.gasUsed += gasPerTx
+  true
+
+proc resetGas*(vm: var VM, gasLimit: int) =
+  vm.gasLimit = gasLimit
+  vm.gasUsed = 0
+
+proc gasRemaining*(vm: VM): int =
+  vm.gasLimit - vm.gasUsed
+
+proc executeBatch*(vm: var VM, txs: seq[Transaction]): seq[bool] =
+  result = newSeq[bool](txs.len)
+  for i, tx in txs:
+    result[i] = vm.applyTx(tx)
+
+proc commitState*(vm: VM): StateDB =
+  vm.state

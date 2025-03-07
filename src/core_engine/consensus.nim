@@ -1,64 +1,64 @@
-# ======================================================
-# Module: Consensus
-# Role: Consensus mechanism initialization and quorum calculation
-# Author's Perspective: System Architect & Lead Cryptographer
-# ======================================================
+import tables
 
-# ------------------------------------------------------
-# Type: Validator
-# ------------------------------------------------------
-# Purpose:
-#   Defines the structure of a network validator.
-#
-# Fields:
-# - id: Unique identifier of the validator, critical for ensuring accountability.
-# - stake: The amount staked by the validator, directly influencing their voting power.
-# - Larger stakes imply higher responsibility and influence within the consensus.
-# - Stake management ensures economic incentives align with network integrity.
-# - isActive explicitly controls validator participation, allowing quick removal or suspension during malicious activities.
-# ------------------------------------------------------
 type
   Validator* = object
-    id*: string       # Unique identifier of the validator
-    stake*: int       # Amount of cryptocurrency staked
-    isActive*: bool   # Active status flag to indicate validator availability
+    id*: int
+    stake*: int
+    active*: bool
 
-# ------------------------------------------------------
-# Type: Consensus
-# - Stores the collection of validators participating in the blockchain consensus.
-# - Reference object for shared, mutable state across node components.
-# ------------------------------------------------------
-type
-  Consensus* = ref object
-    validators*: seq[Validator]  # Active validator set
+  Consensus* = object
+    validators*: Table[int, Validator]
 
-# ------------------------------------------------------
-# Proc: initializeConsensus
-# Purpose:
-#   Initializes consensus state with a provided set of validators.
-# Security Implications:
-#   Validator sets must be securely managed and validated to prevent unauthorized validators from influencing network consensus.
-#   The explicit initialization ensures a clear validator state, critical for security audits and maintaining transparency.
-# ------------------------------------------------------
-proc initializeConsensus*(validators: seq[Validator]): Consensus =
-  Consensus(validators: validators)
+proc newConsensus*(): Consensus =
+  Consensus(validators: initTable[int, Validator]())
 
-# ------------------------------------------------------
-# Proc: calculateQuorum
-# Purpose:
-#   Calculates the quorum necessary for Byzantine Fault Tolerance (BFT)-style consensus.
-#   Ensures sufficient validator agreement to achieve consensus while tolerating faulty or malicious nodes.
-# Cryptographic Security:
-#   Quorum size explicitly set to a majority (greater than 50%) to mitigate attacks (e.g., Sybil, double-spending).
-#   Aligns with established security practices to maintain integrity in a potentially adversarial environment.
-# ------------------------------------------------------
-proc calculateQuorum*(consensus: Consensus): int =
-  consensus.validators.len div 2 + 1
+proc addValidator*(c: var Consensus, id, stake: int) =
+  if stake <= 0 or c.validators.hasKey(id):
+    return
+  c.validators[id] = Validator(id: id, stake: stake, active: true)
 
-# ======================================================
-# Summary (Architectural & Cryptographic Insights):
-# - Explicit definition of validators ensures clarity in stake and identity management, crucial for cryptographic security.
-# - Validator activation toggling (`isActive`) explicitly addresses potential malicious validators.
-# - Quorum calculation explicitly follows standard BFT best practices, preventing consensus attacks by requiring majority validation.
-# - This design aligns security (economic incentives, Byzantine fault tolerance) with network architecture simplicity and maintainability.
-# ======================================================
+proc deactivateValidator*(c: var Consensus, id: int) =
+  if c.validators.hasKey(id):
+    c.validators[id].active = false
+
+proc activateValidator*(c: var Consensus, id: int) =
+  if c.validators.hasKey(id):
+    c.validators[id].active = true
+
+proc removeValidator*(c: var Consensus, id: int) =
+  c.validators.del(id)
+
+proc calculateQuorum*(c: Consensus): int =
+  var activeCount = 0
+  for v in c.validators.values:
+    if v.active:
+      inc activeCount
+  if activeCount == 0:
+    return 0
+  (activeCount div 2) + 1
+
+proc hasQuorum*(c: Consensus, votes: seq[int]): bool =
+  var count = 0
+  for id in votes:
+    if c.validators.hasKey(id) and c.validators[id].active:
+      inc count
+  count >= c.calculateQuorum()
+
+proc validatorStake*(c: Consensus, id: int): int =
+  if c.validators.hasKey(id):
+    c.validators[id].stake
+  else:
+    0
+
+proc totalActiveStake*(c: Consensus): int =
+  var total = 0
+  for v in c.validators.values:
+    if v.active:
+      total += v.stake
+  total
+
+proc validatorExists*(c: Consensus, id: int): bool =
+  c.validators.hasKey(id)
+
+proc isValidatorActive*(c: Consensus, id: int): bool =
+  c.validators.hasKey(id) and c.validators[id].active

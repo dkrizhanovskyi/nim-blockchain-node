@@ -1,58 +1,70 @@
-# ======================================================
-# Module: State Management
-# Role: Blockchain state management and retrieval
-# Author's Perspective: System Architect & Lead Cryptographer
-# ======================================================
-
 import tables
 
-# ------------------------------------------------------
-# Type: StateDB
-# Purpose:
-#   Manages blockchain state with a secure, mutable data store.
-#
-# Fields:
-# - data: A hash table storing state data indexed by unique keys, ensuring efficient access and updates.
-# - Explicit management of state data ensures auditability and fast retrieval critical for consensus and cryptographic proofs.
-# ------------------------------------------------------
-type StateDB* = ref object
-  data*: Table[string, int]  # Stores state data with keys linked to accounts or smart contracts
+type
+  Account* = object
+    balance*: int
+    nonce*: int
 
-# ------------------------------------------------------
-# Proc: initializeStateDB
-# Purpose:
-#   Initializes an empty state database, ensuring a consistent starting point for state tracking.
-# Security Implications:
-#   A clearly defined initial state prevents ambiguity and supports clear, verifiable cryptographic proofs for state transitions.
-# ------------------------------------------------------
-proc initializeStateDB*(): StateDB =
-  StateDB(data: initTable[string, int]())
+  StateDB* = object
+    accounts*: Table[string, Account]
 
-# ------------------------------------------------------
-# Proc: updateState
-# Purpose:
-#   Updates or inserts state entries into the state database.
-# Security and Architecture Considerations:
-#   - Updates explicitly controlled to ensure secure state management and prevent unauthorized or erroneous modifications.
-#   - Critical for integrity in transaction processing, ensuring reliable blockchain operations.
-# ------------------------------------------------------
-proc updateState*(db: StateDB, key: string, value: int) =
-  db.data[key] = value
+proc newStateDB*(): StateDB =
+  StateDB(accounts: initTable[string, Account]())
 
-# ------------------------------------------------------
-# Proc: getState
-# Purpose:
-#   Retrieves stored state information by key.
-# Security and Architecture Considerations:
-#   - Explicit state retrieval ensures efficient and secure data access necessary for verifying transactions and states.
-#   - Default value retrieval prevents undefined behaviors, enhancing reliability and predictability.
-# ------------------------------------------------------
-proc getState*(db: StateDB, key: string): int =
-  db.data.getOrDefault(key, 0)
+proc createAccount*(s: var StateDB, address: string) =
+  if not s.accounts.hasKey(address):
+    s.accounts[address] = Account(balance: 0, nonce: 0)
 
-# ======================================================
-# Summary (Architectural & Cryptographic Insights):
-# - State database designed for explicit, secure state management, critical to cryptographic verification and blockchain integrity.
-# - Data handling practices explicitly ensure state transitions are verifiable, preventing state corruption and unauthorized alterations.
-# - Architecture simplicity promotes maintainability, secure data handling, and efficient retrieval, aligning with best practices in blockchain systems.
-# ======================================================
+proc accountExists*(s: StateDB, address: string): bool =
+  s.accounts.hasKey(address)
+
+proc getBalance*(s: StateDB, address: string): int =
+  if s.accounts.hasKey(address):
+    s.accounts[address].balance
+  else:
+    0
+
+proc setBalance*(s: var StateDB, address: string, amount: int) =
+  if amount < 0:
+    return
+  s.createAccount(address)
+  s.accounts[address].balance = amount
+
+proc increaseBalance*(s: var StateDB, address: string, amount: int) =
+  if amount <= 0:
+    return
+  s.createAccount(address)
+  s.accounts[address].balance += amount
+
+proc decreaseBalance*(s: var StateDB, address: string, amount: int): bool =
+  if amount <= 0 or not s.accounts.hasKey(address):
+    return false
+  let acc = s.accounts[address]
+  if acc.balance < amount:
+    return false
+  s.accounts[address].balance -= amount
+  true
+
+proc getNonce*(s: StateDB, address: string): int =
+  if s.accounts.hasKey(address):
+    s.accounts[address].nonce
+  else:
+    0
+
+proc incrementNonce*(s: var StateDB, address: string): int =
+  s.createAccount(address)
+  s.accounts[address].nonce += 1
+  s.accounts[address].nonce
+
+proc resetAccount*(s: var StateDB, address: string) =
+  if s.accounts.hasKey(address):
+    s.accounts[address] = Account(balance: 0, nonce: 0)
+
+proc deleteAccount*(s: var StateDB, address: string) =
+  s.accounts.del(address)
+
+proc totalSupply*(s: StateDB): int =
+  var total = 0
+  for acc in s.accounts.values:
+    total += acc.balance
+  total
